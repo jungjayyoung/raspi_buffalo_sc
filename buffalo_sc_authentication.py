@@ -28,7 +28,8 @@ app.prepare(
 # [추가됨] 저장된 embedding 로드
 # =========================
 known_embedding = np.load(
-    "/home/willtek/work/umjoocut/known_embedding.npy"
+    #"/home/willtek/work/umjoocut/known_embedding.npy"
+    "known_embedding.npy"
 )
 
 print("임베딩 로드 완료")
