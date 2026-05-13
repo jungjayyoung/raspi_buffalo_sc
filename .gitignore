@@ -21,12 +21,7 @@ Thumbs.db
 # Embeddings
 known_embedding.npy
 
-# Logs
-*.log
 
-# Images
-images/
-captures/
 
 # Jupyter
 .ipynb_checkpoints/

@@ -1,0 +1,12 @@
+2026-05-13 16:15:29 | driver_type=registered | driver_id=registered_driver | mq3_max=0 | mq3_delta=0 | alcohol=invalid | identity=skip | result=RETRY_1
+2026-05-13 16:17:25 | driver_type=registered | driver_id=registered_driver | mq3_max=220 | mq3_delta=100 | alcohol=normal | identity=pass | result=PASS
+2026-05-13 16:17:31 | driver_type=registered | driver_id=registered_driver | mq3_max=220 | mq3_delta=100 | alcohol=normal | identity=pass | result=PASS
+2026-05-13 16:17:38 | driver_type=registered | driver_id=registered_driver | mq3_max=220 | mq3_delta=100 | alcohol=normal | identity=pass | result=PASS
+2026-05-13 16:17:45 | driver_type=registered | driver_id=registered_driver | mq3_max=220 | mq3_delta=100 | alcohol=normal | identity=pass | result=PASS
+2026-05-13 16:17:51 | driver_type=registered | driver_id=registered_driver | mq3_max=220 | mq3_delta=100 | alcohol=normal | identity=pass | result=PASS
+2026-05-13 16:17:58 | driver_type=registered | driver_id=registered_driver | mq3_max=220 | mq3_delta=100 | alcohol=normal | identity=pass | result=PASS
+2026-05-13 16:18:04 | driver_type=registered | driver_id=registered_driver | mq3_max=220 | mq3_delta=100 | alcohol=normal | identity=pass | result=PASS
+2026-05-13 16:36:52 | driver_type=unregistered | driver_id=unknown | mq3_max=230 | mq3_delta=110 | alcohol=normal | identity=fail | result=IDENTITY_FAIL
+2026-05-13 16:37:02 | driver_type=registered | driver_id=registered_driver | mq3_max=230 | mq3_delta=110 | alcohol=normal | identity=pass | result=PASS
+2026-05-13 16:37:53 | driver_type=registered | driver_id=registered_driver | mq3_max=230 | mq3_delta=110 | alcohol=normal | identity=pass | result=PASS
+2026-05-13 16:46:45 | driver_type=registered | driver_id=registered_driver | mq3_max=230 | mq3_delta=110 | alcohol=normal | identity=pass | result=PASS
