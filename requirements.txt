@@ -1,4 +1,4 @@
 opencv-python
-numpy
+numpy<2
 insightface
 onnxruntime
