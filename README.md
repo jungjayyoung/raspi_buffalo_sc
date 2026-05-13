@@ -1,251 +1,214 @@
-# UmjooCut
 
-AI 기반 얼굴 인증 및 음주운전 방지 시스템
+# Update 5/13
+# 얼굴 인증 기반 음주운전 방지 시스템
 
 ## 📌 프로젝트 소개
 
-UmjooCut은 등록 사용자 얼굴 인증과 음주 측정을 기반으로 차량 시동 가능 여부를 판단하는 시스템입니다.
+본 프로젝트는 Raspberry Pi와 STM32를 활용한
+얼굴 인증 기반 음주운전 방지 시스템입니다.
 
-InsightFace의 `buffalo_sc` 모델을 활용한 얼굴 인증,  
-MQ3 센서를 활용한 음주 감지,  
-Raspberry Pi와 STM32 간 UART 통신을 통해 차량 접근 및 시동을 제어합니다.
+운전자의 얼굴 인증,
+MQ-3 기반 음주 측정,
+본인 검증,
+운전자 교체 감지 기능을 통합하여
+대리 측정 및 음주 운전을 방지하는 것을 목표로 합니다.
 
 ---
 
-# 🧩 시스템 구조
+# 🧠 시스템 핵심 기능
+
+## ✅ 등록 운전자 인증
+- 등록 운전자 얼굴 임베딩 생성
+- `known_embedding.npy` 기반 얼굴 비교
+- 등록 / 미등록 운전자 판별
+
+## ✅ 세션 기반 운전자 추적
+- face_A 1~3장 촬영
+- 평균 embedding 생성
+- `session_embedding.npy` 생성
+- 세션 운전자 임시 등록
+
+## ✅ 본인 검증 시스템
+- 시동 직전 face_B 재촬영
+- session_embedding ↔ face_B 비교
+- 운전자 교체 여부 판단
+- 대리 측정 방지
+
+## ✅ MQ-3 음주 측정
+- MQ3 baseline / max / delta 계산
+- 변화량 기반 측정 구조
+- 실제 호흡 여부 확인 가능
+
+## ✅ 입-MQ3 위치 확인
+- 카메라 영상 기반 입 위치 추적
+- MQ3 위치 거리 계산
+- READY 상태 안정화 시간 적용
+- 측정기 앞 위치 검증
+
+## ✅ 증거 기록 시스템
+- 음주 감지 이미지 저장
+- 본인 검증 실패 이미지 저장
+- system.log 기록
+- registered / unregistered 분리 저장
+
+---
+
+# 🏗️ 시스템 구조
 
 ```text
-USB Webcam
-    ↓
-Raspberry Pi 5
- ├─ 얼굴 인증
- ├─ 운전자 위치 확인
- ├─ MQ3 측정 제어
- └─ UART 통신
-    ↓
-STM32F411RE
- ├─ MQ3 센서
- ├─ LED 제어
- ├─ LCD 출력
- ├─ Relay 제어
- └─ Buzzer 제어
-```
+STM32
+- 시동 버튼 입력
+- 운전자 감지 버튼 입력
+- MQ-3 센서 측정
+- LED 제어
+- Relay 제어
+- Buzzer 제어
+- UART 통신
 
----
+Raspberry Pi
+- 얼굴 촬영
+- 등록 운전자 인증
+- 세션 운전자 생성
+- 본인 검증
+- MQ3 음주 판정
+- 입-MQ3 위치 확인
+- 로그 저장
+- 증거 이미지 저장
 
-# ⚙️ 주요 기능
-
-## ✅ 등록 사용자 얼굴 인증
-
-- InsightFace buffalo_sc 모델 사용
-- 등록된 사용자 얼굴 임베딩 생성
-- 실시간 얼굴 인증 수행
-- 일정 횟수 이상 검출 시 인증 성공
-
-## ✅ 운전자 위치 확인
-
-- 운전자 영역(ROI) 검사
-- 가장 큰 얼굴 추적
-- 얼굴 크기 필터링
-
-## ✅ 입 위치 기반 MQ3 측정 시작
-
-- 입 위치 Keypoint 추적
-- MQ3 센서 위치와 거리 계산
-- 일정 거리 이하일 때 측정 시작
-
-## ✅ 실제 호흡 여부 판단
-
-- STM32가 MQ3 값을 연속 전송
-- Raspberry Pi가 MQ3 변화량 분석
-- 실제로 숨을 불었는지 판단
-
-## ✅ 차량 시동 제어
-
-- 음주 여부에 따라
-  - ALLOW
-  - BLOCK
-  전송
-- STM32가 Relay 제어 수행
-
----
-
-# 🔄 시스템 흐름
+# 🔄 시스템 동작 흐름
 
 ```text
-READY
-↓
-등록 사용자 얼굴 인증
-↓
-face_ok
-↓
-운전자 위치 확인
-↓
-입-MQ3 거리 확인
-↓
-start_mq3
-↓
-STM32가 MQ3 값 연속 송신
-↓
-Raspberry Pi가 변화량 분석
-↓
-실제 호흡 여부 판단
-↓
-ALLOW / BLOCK
-↓
-STM32 출력 제어
-```
-
----
+1. 시동 버튼 입력
+2. STM32 → Raspberry Pi 시동 요청
+3. 운전자 감지
+4. face_A 1~3장 촬영
+5. 등록 운전자 여부 확인
+6. session_embedding 생성
+7. 입-MQ3 위치 확인
+8. MQ3 음주 측정
+9. 시동 직전 face_B 재촬영
+10. face_B ↔ session_embedding 비교
+11. 최종 PASS / FAIL 판정
 
 # 📂 프로젝트 구조
 
 ```text
-umjoocut/
+RASPI_BUFFALO_SC/
 │
-├── main.py
+├── db/
+│   ├── images/
+│   │   └── registered_driver/
+│   │       ├── 1.jpg
+│   │       ├── 2.jpg
+│   │       └── 3.jpg
+│   │
+│   └── known_embedding.npy
+│
+├── logs/
+│   ├── temp/
+│   │   ├── face_A_1.jpg
+│   │   ├── face_A_2.jpg
+│   │   ├── face_A_3.jpg
+│   │   ├── face_B.jpg
+│   │   └── session_embedding.npy
+│   │
+│   ├── registered/
+│   │   ├── normal/
+│   │   └── drunk/
+│   │
+│   ├── unregistered/
+│   │   ├── normal/
+│   │   └── drunk/
+│   │
+│   ├── identity_fail/
+│   └── system.log
+│
+├── alcohol_judge.py
 ├── buffalo_sc_register.py
-├── buffalo_sc_authentication.py
-├── buffalo_sc_alcohol_check.py
-├── known_embedding.npy
+├── config.py
+├── face_capture.py
+├── file_manager.py
+├── logger_manager.py
+├── main.py
+├── mouth_position_checker.py
+├── registered_driver.py
+├── session_driver.py
+├── uart_manager.py
 └── requirements.txt
 ```
+# 🧪 로컬 테스트 방법
 
----
+## 1. 가상환경 활성화
 
-# 📄 파일 설명
-
-## main.py
-
-전체 시스템 상태 머신 및 UART 통신 제어
-
-- READY 수신
-- 얼굴 인증 실행
-- 음주 측정 실행
-- MQ3 값 수신
-- ALLOW / BLOCK 판단
-
-## buffalo_sc_register.py
-
-등록 사용자 얼굴 임베딩 생성
-
-- 얼굴 embedding 추출
-- 평균 embedding 생성
-- known_embedding.npy 저장
-
-## buffalo_sc_authentication.py
-
-등록 사용자 얼굴 인증
-
-- 전체 프레임 얼굴 검사
-- cosine similarity 비교
-- 인증 성공 시 face_ok 전송
-
-## buffalo_sc_alcohol_check.py
-
-운전자 위치 및 입 위치 검사
-
-- 운전자 ROI 검사
-- 입 위치 추적
-- MQ3 거리 계산
-- start_mq3 전송
-
----
-
-# 🖥️ 사용 기술
-
-## AI / Vision
-
-- Python
-- OpenCV
-- InsightFace
-- buffalo_sc
-- ONNX Runtime
-
-## Embedded
-
-- Raspberry Pi 5
-- STM32F411RE
-- UART Communication
-- MQ3 Alcohol Sensor
-
----
-
-# 📦 설치
-
-## requirements.txt
-
-```text
-opencv-python==4.9.0.80
-numpy==1.26.4
-insightface
-onnxruntime==1.17.0
-pyserial
+```bash
+venv\Scripts\activate
 ```
 
-설치:
-
+## 2. 패키지 설치
 ```bash
 pip install -r requirements.txt
 ```
 
----
 
-# ▶️ 실행 방법
-
-## 1. 얼굴 임베딩 생성
-
+## 3. 등록 운전자 embedding 생성
+```bash
+db/images/registered_driver/
+```
+이후 실행
 ```bash
 python buffalo_sc_register.py
 ```
 
-## 2. 전체 시스템 실행
+성공시:
+```bash
+db/known_embedding.npy
+```
+생성됨.
 
+
+## 4. 메인 실행
 ```bash
 python main.py
 ```
 
----
-
-# 📡 UART 프로토콜
+# 🖥️ UART 프로토콜
 
 ## STM32 → Raspberry Pi
 
 ```text
-READY
-MQ3:320
+ACK:READY
+REQ:START
+DETECT:ON
+DETECT:OFF
+MQ3:<value>
 ```
 
 ## Raspberry Pi → STM32
 
 ```text
-face_ok
-face_fail
-start_mq3
-ALLOW
-BLOCK
+ACK:START
+REQ:MQ3
+PASS
+FAIL_DRUNK
+RETRY
+IDENTITY_FAIL
+ERROR
 ```
 
----
+# ⚙️ 사용 기술
 
-# 🚧 향후 개선 예정
+## AI / Vision
+- InsightFace (buffalo_sc)
+- OpenCV
+- NumPy
 
-- STM32 펌웨어 구현
-- MQ3 센서 실제 측정 로직 구현
-- MQ3 기준값 및 호흡 변화량 튜닝
-- Relay Module 기반 차량 시동 제어 구현
-- Green / Red / Yellow LED 상태 출력 구현
-- Buzzer 경고 출력 구현
-- I2C LCD 상태 메시지 출력 구현
-- Raspberry Pi와 STM32 간 UART 통신 실기기 테스트
-- 전체 하드웨어 회로 연결 및 통합 테스트
-- 실제 시연 환경에서 얼굴 인증 및 음주 측정 안정화
+## Hardware
+- Raspberry Pi
+- STM32
+- MQ-3 Alcohol Sensor
+- Relay Module
+- Buzzer
+- Camera
 
----
-
-# 👥 Team
-
-- 박종빈, 정재영: Face Authentication
-- 정재영, 박세연: Alcohol Detection
-- 박세연: Raspberry Pi Integration
-- 박종빈: STM32 Embedded System
+## Communication
+- UART Serial Communication
