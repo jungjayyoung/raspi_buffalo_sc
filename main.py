@@ -1,192 +1,442 @@
-import serial
-import subprocess
+# main.py
+
 import time
 
-# =========================
-# [추가됨] UART 설정
-# =========================
-UART_PORT = "/dev/serial0"
-UART_BAUDRATE = 115200
+from config import (
+    MSG_ACK_READY,
+    MSG_REQ_START,
+    MSG_DETECT_ON,
+    MSG_ACK_START,
+    MSG_REQ_MQ3,
+    MSG_PASS,
+    MSG_FAIL_DRUNK,
+    MSG_RETRY,
+    MSG_IDENTITY_FAIL,
+    MSG_ERROR,
+    MQ3_SAMPLE_TIME,
+    MAX_RETRY,
+    RETRY_DELAY,
+    SESSION_FACE_CAPTURE_COUNT
+)
+
+from uart_manager import UARTManager
+from logger_manager import LoggerManager
+from file_manager import FileManager
+
+from face_capture import FaceCapture
+from registered_driver import RegisteredDriver
+from session_driver import SessionDriver
+from alcohol_judge import AlcoholJudge
+from config import USE_UART
+
+# [추가됨] 입-MQ3 위치 확인 모듈
+from mouth_position_checker import MouthPositionChecker
 
 # =========================
-# [추가됨] MQ3 임시 기준값
+# [추가됨] MQ3 값 수집 함수
 # =========================
-MQ3_THRESHOLD = 400       # 음주 판단 기준
-BLOW_DELTA_THRESHOLD = 50 # 실제로 불었는지 판단하는 변화량 기준
-MQ3_SAMPLE_TIME = 5       # 5초 동안 MQ3 값 수집
+def collect_mq3_values(uart):
 
-# =========================
-# [추가됨] MQ3 값 여러 개 수집
-# =========================
-def collect_mq3_values(sample_time=MQ3_SAMPLE_TIME):
-    values = []
+    # =========================
+    # [추가됨] 로컬 테스트용 MQ3 더미값
+    # STM32 없이 테스트할 때 사용
+    # =========================
+    if not USE_UART:
 
+        print("[LOCAL TEST] MQ3 더미값 사용")
+
+        # 정상 테스트용
+        return [120, 150, 190, 230]
+
+        # 음주 테스트용으로 바꾸고 싶으면 아래 사용
+        # return [120, 260, 430, 520]
+
+
+    mq3_values = []
     start_time = time.time()
 
-    with serial.Serial(UART_PORT, UART_BAUDRATE, timeout=1) as ser:
+    while time.time() - start_time < MQ3_SAMPLE_TIME:
 
-        while time.time() - start_time < sample_time:
+        message = uart.read_message()
 
-            line = ser.readline().decode(errors="ignore").strip()
+        if not message:
+            continue
 
-            if not line:
-                continue
+        if message.startswith("MQ3:"):
 
-            print(f"STM32 → Pi: {line}")
+            try:
+                value = int(message.split(":")[1])
+                mq3_values.append(value)
 
-            if line.startswith("MQ3:"):
+            except ValueError:
+                print("MQ3 값 변환 실패")
 
-                try:
-                    value = int(line.split(":")[1])
-                    values.append(value)
-
-                except ValueError:
-                    print("MQ3 값 변환 실패")
-
-    return values
+    # stm32 용
+    return mq3_values
+    
 
 
 # =========================
-# [추가됨] UART 한 줄 읽기
+# [추가됨] face_A 여러 장 촬영 함수
 # =========================
-def read_uart_line():
-    with serial.Serial(UART_PORT, UART_BAUDRATE, timeout=1) as ser:
+def capture_session_faces(face_capture):
+
+    face_a_paths = []
+    face_a_embeddings = []
+
+    for i in range(SESSION_FACE_CAPTURE_COUNT):
+
+        print(f"face_A 촬영 {i + 1}/{SESSION_FACE_CAPTURE_COUNT}")
+
+        image_path, embedding, _ = face_capture.capture_face(
+            label=f"face_A_{i + 1}"
+        )
+
+        if image_path is None:
+            print("face_A 촬영 실패")
+            continue
+
+        face_a_paths.append(image_path)
+        face_a_embeddings.append(embedding)
+
+        time.sleep(0.5)
+
+    return face_a_paths, face_a_embeddings
+
+
+# =========================
+# [추가됨] 대표 face_A 이미지 선택
+# =========================
+def get_main_face_a_path(face_a_paths):
+
+    if len(face_a_paths) == 0:
+        return None
+
+    return face_a_paths[0]
+
+
+# =========================
+# [수정됨] 메인 함수
+# 기존 이력자 DB 방식 → 등록 운전자 + 세션 운전자 방식
+# =========================
+def main():
+
+    uart = UARTManager()
+    logger = LoggerManager()
+    file_manager = FileManager()
+
+    face_capture = FaceCapture()
+    registered_driver = RegisteredDriver()
+    session_driver = SessionDriver()
+    alcohol_judge = AlcoholJudge()
+
+    # [추가됨] 입-MQ3 위치 확인 객체
+    mouth_checker = MouthPositionChecker()
+
+    retry_count = 0
+
+    try:
+        print("[2단계] ACK:READY 대기")
+        #uart.wait_for_message(MSG_ACK_READY)
+        print("[LOCAL TEST] ACK:READY 자동 통과")
+
         while True:
-            line = ser.readline().decode(errors="ignore").strip()
 
-            if line:
-                print(f"STM32 → Pi: {line}")
-                return line
+            print("[3단계] REQ:START 대기")
+            #uart.wait_for_message(MSG_REQ_START)
+            print("[LOCAL TEST] REQ:START 자동 통과")
+
+            uart.send_message(MSG_ACK_START)
+
+            while True:
+
+                print("[4단계] 운전자 감지 대기")
+                #uart.wait_for_message(MSG_DETECT_ON)
+                print("[LOCAL TEST] DETECT:ON 자동 통과")
+
+                # =========================
+                # [수정됨] face_A 1~3장 촬영
+                # 기존: face_A 1장 촬영
+                # 변경: 세션 운전자 embedding 생성을 위해 여러 장 촬영
+                # =========================
+                print("[5단계] face_A 세션 촬영")
+
+                face_a_paths, face_a_embeddings = capture_session_faces(
+                    face_capture
+                )
+
+                if len(face_a_embeddings) == 0:
+
+                    print("face_A 세션 촬영 실패")
+                    uart.send_message(MSG_ERROR)
+
+                    # [수정됨] 카메라 오류 시 무한 반복 방지
+                    break
+
+                face_a_path = get_main_face_a_path(
+                    face_a_paths
+                )
+
+                # =========================
+                # [추가됨] 세션 embedding 생성
+                # 측정한 사람을 이번 세션 운전자로 임시 등록
+                # =========================
+                session_embedding = session_driver.create_session_embedding(
+                    face_a_embeddings
+                )
+
+                if session_embedding is None:
+
+                    print("세션 embedding 생성 실패")
+                    uart.send_message(MSG_ERROR)
+                    continue
+
+                # =========================
+                # [수정됨] 등록 운전자 여부 확인
+                # 기존: 이력자 DB 1:N 매칭
+                # 변경: 등록 운전자 1명과 비교
+                # =========================
+                registered_result = registered_driver.check_registered(
+                    session_embedding
+                )
+
+                is_registered = registered_result["is_registered"]
+
+                driver_type = "registered" if is_registered else "unregistered"
+                driver_id = "registered_driver" if is_registered else "unknown"
+
+                print(f"운전자 유형: {driver_type}")
+                print(f"Registered Similarity: {registered_result['similarity']:.4f}")
 
 
-# =========================
-# [추가됨] UART 한 줄 전송
-# =========================
-def send_uart_message(message):
-    with serial.Serial(UART_PORT, UART_BAUDRATE, timeout=1) as ser:
-        ser.write((message + "\n").encode())
-        print(f"Pi → STM32: {message}")
+                # =========================
+                # [추가됨] 입-MQ3 위치 확인
+                # =========================
+                print("[5단계] 입-MQ3 위치 확인")
+
+                mouth_ready = mouth_checker.check_ready()
+
+                if not mouth_ready:
+
+                    print("입-MQ3 위치 확인 실패")
+                    uart.send_message(MSG_ERROR)
+
+                    continue
+
+                # =========================
+                # [추가됨] MQ3 측정 요청
+                # =========================
+                uart.send_message(MSG_REQ_MQ3)
+
+                print("[5단계] MQ3 값 수집")
+                mq3_values = collect_mq3_values(uart)
+
+                alcohol_result = alcohol_judge.judge(
+                    mq3_values
+                )
+
+                mq3_max = alcohol_result["max_value"]
+                mq3_delta = alcohol_result["delta"]
+
+                # =========================
+                # [추가됨] 실제 호흡 실패 처리
+                # =========================
+                if not alcohol_result["is_blown"]:
+
+                    print("실제 호흡 감지 실패")
+
+                    retry_count += 1
+
+                    logger.write_log(
+                        driver_type=driver_type,
+                        driver_id=driver_id,
+                        mq3_max=mq3_max,
+                        mq3_delta=mq3_delta,
+                        alcohol_result="invalid",
+                        identity_result="skip",
+                        final_result=f"RETRY_{retry_count}"
+                    )
+
+                    uart.send_message(MSG_RETRY)
+
+                    if retry_count > MAX_RETRY:
+                        uart.send_message(MSG_FAIL_DRUNK)
+                        print("재시도 초과: FAIL_DRUNK")
+
+                    time.sleep(RETRY_DELAY)
+                    continue
+
+                # =========================
+                # [6단계] 음주 감지 처리
+                # =========================
+                if alcohol_result["is_drunk"]:
+
+                    print("[6단계] 음주 감지")
+
+                    retry_count += 1
+
+                    # =========================
+                    # [수정됨] registered / unregistered 기준 저장
+                    # =========================
+                    if is_registered:
+                        file_manager.save_registered_drunk(
+                            face_a_path
+                        )
+                    else:
+                        file_manager.save_unregistered_drunk(
+                            face_a_path
+                        )
+
+                    logger.write_log(
+                        driver_type=driver_type,
+                        driver_id=driver_id,
+                        mq3_max=mq3_max,
+                        mq3_delta=mq3_delta,
+                        alcohol_result="drunk",
+                        identity_result="skip",
+                        final_result=f"RETRY_{retry_count}"
+                    )
+
+                    if retry_count <= MAX_RETRY:
+
+                        uart.send_message(MSG_RETRY)
+                        print(f"{retry_count}회차 음주 감지: 30초 후 재측정")
+
+                        time.sleep(RETRY_DELAY)
+                        continue
+
+                    else:
+
+                        uart.send_message(MSG_FAIL_DRUNK)
+
+                        logger.write_log(
+                            driver_type=driver_type,
+                            driver_id=driver_id,
+                            mq3_max=mq3_max,
+                            mq3_delta=mq3_delta,
+                            alcohol_result="drunk",
+                            identity_result="skip",
+                            final_result="FAIL_DRUNK"
+                        )
+
+                        print("최종 음주 판정: FAIL_DRUNK")
+                        continue
+
+                # =========================
+                # [7단계] 본인 검증
+                # 시동 직전 현재 운전자 face_B 촬영
+                # face_B ↔ session_embedding 비교
+                # =========================
+                print("[7단계] 본인 검증 face_B 촬영")
+
+                face_b_path, face_b_embedding, _ = face_capture.capture_face(
+                    label="face_B"
+                )
+
+                if face_b_path is None:
+
+                    print("face_B 촬영 실패")
+                    uart.send_message(MSG_ERROR)
+                    continue
+
+                identity_result = session_driver.verify_current_driver(
+                    current_embedding=face_b_embedding,
+                    session_embedding=session_embedding
+                )
+
+                # =========================
+                # [수정됨] 본인 검증 실패 처리
+                # 기존: face_A embedding과 face_B 비교
+                # 변경: session_embedding과 face_B 비교
+                # =========================
+                if not identity_result["is_same_person"]:
+
+                    print("본인 검증 실패")
+
+                    file_manager.save_identity_fail(
+                        face_a_path,
+                        face_b_path
+                    )
+
+                    logger.write_log(
+                        driver_type=driver_type,
+                        driver_id=driver_id,
+                        mq3_max=mq3_max,
+                        mq3_delta=mq3_delta,
+                        alcohol_result="normal",
+                        identity_result="fail",
+                        final_result="IDENTITY_FAIL"
+                    )
+
+                    uart.send_message(MSG_IDENTITY_FAIL)
+
+                    continue
+
+                # =========================
+                # [9단계] 최종 PASS
+                # =========================
+                print("[9단계] 최종 PASS")
+
+                uart.send_message(MSG_PASS)
+
+                retry_count = 0
+
+                # =========================
+                # [수정됨] 정상 통과 이미지 저장 정책
+                # registered / unregistered 기준
+                # =========================
+                if is_registered:
+                    file_manager.save_registered_normal(
+                        face_a_path
+                    )
+                else:
+                    file_manager.save_unregistered_normal(
+                        face_a_path
+                    )
+
+                file_manager.delete_temp_file(
+                    face_b_path
+                )
+
+                logger.write_log(
+                    driver_type=driver_type,
+                    driver_id=driver_id,
+                    mq3_max=mq3_max,
+                    mq3_delta=mq3_delta,
+                    alcohol_result="normal",
+                    identity_result="pass",
+                    final_result="PASS"
+                )
+
+                print("시퀀스 완료")
+
+                # =========================
+                # [수정됨] 로컬 테스트에서는 종료
+                # 실제 차량에서는 다음 시동 요청 대기
+                # =========================
+                if not USE_UART:
+
+                    print("다음 시동 요청 대기 상태")
+                    return
+
+                break
+                
+
+    except KeyboardInterrupt:
+        print("사용자 종료")
+
+    except Exception as e:
+        print(f"예외 발생: {e}")
+        uart.send_message(MSG_ERROR)
+
+    finally:
+        face_capture.release()
+
+        # [추가됨]
+        mouth_checker.release()
+
+        uart.close()
 
 
-# =========================
-# [추가됨] 파이썬 파일 실행 후 출력 확인
-# =========================
-def run_python_file(filename, success_keyword):
-    process = subprocess.Popen(
-        ["python3", filename],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True
-    )
-
-    success = False
-
-    for line in process.stdout:
-        print(line, end="")
-
-        if success_keyword in line:
-            success = True
-
-    process.wait()
-
-    return success
-
-
-# =========================
-# [추가됨] 메인 시스템 루프
-# =========================
-while True:
-
-    print("시스템 대기 중... STM32 READY 대기")
-
-    # =========================
-    # [추가됨] STM32 READY 수신 대기
-    # =========================
-    line = read_uart_line()
-
-    if line != "READY":
-        continue
-
-    print("READY 수신 완료")
-    print("등록 사용자 인증 시작")
-
-    # =========================
-    # [추가됨] 얼굴 인증 실행
-    # =========================
-    auth_ok = run_python_file(
-        "buffalo_sc_authentication.py",
-        "UART: face_ok"
-    )
-
-    # =========================
-    # [추가됨] 인증 실패 처리
-    # =========================
-    if not auth_ok:
-        print("인증 실패")
-        send_uart_message("face_fail")
-        continue
-
-    print("인증 성공")
-    print("운전자 음주 검사 위치 확인 시작")
-
-    # =========================
-    # [추가됨] 알코올 체크 위치 확인 실행
-    # =========================
-    alcohol_ready = run_python_file(
-        "buffalo_sc_alcohol_check.py",
-        "UART: start_mq3"
-    )
-
-    # =========================
-    # [추가됨] MQ3 시작 실패 처리
-    # =========================
-    if not alcohol_ready:
-        print("MQ3 측정 시작 실패")
-        send_uart_message("BLOCK")
-        continue
-
-    print("MQ3 측정 시작 요청 완료")
-    print("STM32 MQ3 값 대기")
-
-    # =========================
-    # [추가됨] STM32에서 MQ3 값 수신
-    # 예: MQ3:320
-    # =========================
-    # =========================
-    # [수정됨] MQ3 값을 여러 번 받아서 실제로 불었는지 판단
-    # =========================
-    mq3_values = collect_mq3_values()
-
-    if len(mq3_values) == 0:
-        print("MQ3 값 수신 실패")
-        send_uart_message("BLOCK")
-        continue
-
-    baseline = mq3_values[0]
-    max_value = max(mq3_values)
-    delta = max_value - baseline
-
-    print(f"MQ3 baseline: {baseline}")
-    print(f"MQ3 max: {max_value}")
-    print(f"MQ3 delta: {delta}")
-
-    # =========================
-    # [추가됨] 실제로 불었는지 판단
-    # =========================
-    if delta < BLOW_DELTA_THRESHOLD:
-        print("측정 실패: 실제 호흡 변화량 부족")
-        send_uart_message("BLOCK")
-        continue
-
-    # =========================
-    # [수정됨] 실제로 불었다고 판단된 경우에만 음주 여부 판단
-    # =========================
-    if max_value < MQ3_THRESHOLD:
-        send_uart_message("ALLOW")
-        print("최종 결과: ALLOW")
-
-    else:
-        send_uart_message("BLOCK")
-        print("최종 결과: BLOCK")
-
-    time.sleep(1)
+if __name__ == "__main__":
+    main()
