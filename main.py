@@ -1,6 +1,7 @@
 # main.py
 
 import time
+import os
 
 from config import (
     MSG_ACK_READY,
@@ -84,25 +85,49 @@ def capture_session_faces(face_capture):
     face_a_paths = []
     face_a_embeddings = []
 
-    for i in range(SESSION_FACE_CAPTURE_COUNT):
+    max_attempts = SESSION_FACE_CAPTURE_COUNT * 5
+    attempt_count = 0
 
-        print(f"face_A 촬영 {i + 1}/{SESSION_FACE_CAPTURE_COUNT}")
+    while (
+        len(face_a_paths) < SESSION_FACE_CAPTURE_COUNT
+        and attempt_count < max_attempts
+    ):
+
+        attempt_count += 1
+
+        current_count = len(face_a_paths) + 1
 
         image_path, embedding, _ = face_capture.capture_face(
-            label=f"face_A_{i + 1}"
+            label=f"face_A_{current_count}"
         )
 
-        if image_path is None:
+        if image_path is None or embedding is None:
             #print("face_A 촬영 실패")
             continue
 
-        print(
-            f"face_A 촬영 성공 "
-            f"{len(face_a_paths)+1}/{SESSION_FACE_CAPTURE_COUNT}"
-        )
+        # 실제 파일 저장 여부 재확인
+        if not os.path.exists(image_path):
+            print(
+                f"face_A {current_count}/{SESSION_FACE_CAPTURE_COUNT} "
+                "파일 저장 실패 → 재촬영"
+            )
+            continue
+
+        # 파일 크기가 0이면 저장 실패로 판단
+        if os.path.getsize(image_path) == 0:
+            print(
+                f"face_A {current_count}/{SESSION_FACE_CAPTURE_COUNT} "
+                "빈 파일 생성 → 재촬영"
+            )
+            continue
 
         face_a_paths.append(image_path)
         face_a_embeddings.append(embedding)
+
+        print(
+            f"face_A 촬영 성공 "
+            f"{len(face_a_paths)}/{SESSION_FACE_CAPTURE_COUNT}"
+        )
 
         time.sleep(0.5)
 
