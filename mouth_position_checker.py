@@ -28,7 +28,7 @@ MQ3_Y = 140
 # [추가됨] 입과 MQ3 거리 기준
 # 이 값 이하이면 측정 가능
 # =========================
-MQ3_DISTANCE_THRESHOLD = 20
+MQ3_DISTANCE_THRESHOLD = 50
 
 # =========================
 # [추가됨] 운전자 영역
@@ -69,9 +69,14 @@ class MouthPositionChecker:
         # [추가됨] 카메라 연결
         # =========================
         # [수정됨] Windows 로컬 테스트에서 MSMF 오류 방지용
+        #self.cap = cv2.VideoCapture(
+        #    CAMERA_INDEX,
+        #    cv2.CAP_DSHOW
+        #)
+
+        #라즈베리파이용
         self.cap = cv2.VideoCapture(
-            CAMERA_INDEX,
-            cv2.CAP_DSHOW
+            CAMERA_INDEX
         )
 
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)

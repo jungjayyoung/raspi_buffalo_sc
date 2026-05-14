@@ -21,7 +21,14 @@ Thumbs.db
 # Embeddings
 known_embedding.npy
 
+# 로그 파일
+logs/*.log
 
+# 로그 이미지 전체 제외
+logs/**/*.jpg
+
+# DB 얼굴 이미지 제외
+db/images/**/*.jpg
 
 # Jupyter
 .ipynb_checkpoints/

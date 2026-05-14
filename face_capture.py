@@ -3,6 +3,7 @@
 import cv2
 import os
 from datetime import datetime
+import time
 
 from insightface.app import FaceAnalysis
 
@@ -41,9 +42,14 @@ class FaceCapture:
         # [추가됨] 카메라 연결
         # =========================
         # [수정됨] Windows 로컬 테스트에서 MSMF 오류 방지용
+        #self.cap = cv2.VideoCapture(
+        #    CAMERA_INDEX,
+        #    cv2.CAP_DSHOW
+        #)
+        
+        #라즈베리파이용
         self.cap = cv2.VideoCapture(
-            CAMERA_INDEX,
-            cv2.CAP_DSHOW
+            CAMERA_INDEX
         )
 
         self.cap.set(
@@ -97,7 +103,7 @@ class FaceCapture:
 
         if not ret:
 
-            print("카메라 프레임 읽기 실패")
+            #print("카메라 프레임 읽기 실패")
 
             return None, None, None
 
@@ -108,9 +114,11 @@ class FaceCapture:
 
         if len(faces) == 0:
 
-            print("얼굴 검출 실패")
-
+            # print("얼굴 검출 실패")
+ 
             return None, None, None
+        
+        print("얼굴 검출 성공")
 
         # =========================
         # [추가됨] 가장 큰 얼굴 선택
@@ -190,3 +198,63 @@ class FaceCapture:
             print("카메라 종료")
 
         cv2.destroyAllWindows()
+
+
+    def preview(self, duration=5):
+
+
+        print("카메라 준비 중...")
+
+        start_time = time.time()
+        last_remain = None
+
+        while time.time() - start_time < duration:
+
+            ret, frame = self.cap.read()
+            
+            if not ret:
+                print("카메라 읽기 실패")
+                continue
+
+            # 남은 시간 표시
+            remain = int(duration - (time.time() - start_time)) + 1
+
+            if remain != last_remain:
+                print(f"{remain}초 후 얼굴 인증 시작")
+                last_remain = remain
+
+            # 비디오 출력 영상 세팅
+            h, w, _ = frame.shape
+
+            text = f"{remain}"
+
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 5
+            thickness = 8
+
+            (text_w, text_h), _ = cv2.getTextSize(
+                text,
+                font,
+                font_scale,
+                thickness
+            )
+
+            x = (w - text_w) // 2
+            y = (h + text_h) // 2
+
+            cv2.putText(
+                frame,
+                text,
+                (x, y),
+                font,
+                font_scale,
+                (0,255,0),
+                thickness
+            )
+
+            cv2.imshow("Driver Camera", frame)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        print("얼굴을 인증합니다")

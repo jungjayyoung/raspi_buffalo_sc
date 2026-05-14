@@ -93,8 +93,13 @@ def capture_session_faces(face_capture):
         )
 
         if image_path is None:
-            print("face_A 촬영 실패")
+            #print("face_A 촬영 실패")
             continue
+
+        print(
+            f"face_A 촬영 성공 "
+            f"{len(face_a_paths)+1}/{SESSION_FACE_CAPTURE_COUNT}"
+        )
 
         face_a_paths.append(image_path)
         face_a_embeddings.append(embedding)
@@ -104,7 +109,7 @@ def capture_session_faces(face_capture):
     return face_a_paths, face_a_embeddings
 
 
-# =========================
+# =========================clear
 # [추가됨] 대표 face_A 이미지 선택
 # =========================
 def get_main_face_a_path(face_a_paths):
@@ -130,8 +135,8 @@ def main():
     session_driver = SessionDriver()
     alcohol_judge = AlcoholJudge()
 
-    # [추가됨] 입-MQ3 위치 확인 객체
-    mouth_checker = MouthPositionChecker()
+
+    face_capture.preview(duration=5)
 
     retry_count = 0
 
@@ -167,7 +172,7 @@ def main():
 
                 if len(face_a_embeddings) == 0:
 
-                    print("face_A 세션 촬영 실패")
+                    #print("face_A 세션 촬영 실패")
                     uart.send_message(MSG_ERROR)
 
                     # [수정됨] 카메라 오류 시 무한 반복 방지
@@ -214,15 +219,31 @@ def main():
                 # =========================
                 print("[5단계] 입-MQ3 위치 확인")
 
+                # =========================
+                # [수정됨] face_A 촬영에 사용한 카메라 해제
+                # MouthPositionChecker가 같은 카메라를 다시 열 수 있도록 함
+                # =========================
+                face_capture.release()
+
+                # =========================
+                # [수정됨] 입-MQ3 위치 확인 객체를 이 시점에 생성
+                # 기존처럼 main 시작 시 만들면 카메라 충돌 가능
+                # =========================
+                mouth_checker = MouthPositionChecker()
                 mouth_ready = mouth_checker.check_ready()
+                mouth_checker.release()
 
                 if not mouth_ready:
 
                     print("입-MQ3 위치 확인 실패")
                     uart.send_message(MSG_ERROR)
 
-                    continue
+                    return
 
+                # =========================
+                # [추가됨] face_B 촬영을 위해 FaceCapture 다시 생성
+                # =========================
+                face_capture = FaceCapture()
                 # =========================
                 # [추가됨] MQ3 측정 요청
                 # =========================
@@ -431,10 +452,7 @@ def main():
 
     finally:
         face_capture.release()
-
-        # [추가됨]
-        mouth_checker.release()
-
+        
         uart.close()
 
 
