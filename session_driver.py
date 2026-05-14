@@ -114,6 +114,8 @@ class SessionDriver:
             f"Session Identity Similarity: {similarity:.4f}"
         )
 
+        print(f"[IDENTITY] threshold: {IDENTITY_VERIFY_THRESHOLD}")
+
         is_same_person = (
             similarity >=
             IDENTITY_VERIFY_THRESHOLD

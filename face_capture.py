@@ -39,18 +39,22 @@ class FaceCapture:
         print("Face Model 로드 완료")
 
         # =========================
-        # [추가됨] 카메라 연결
-        # =========================
-        # [수정됨] Windows 로컬 테스트에서 MSMF 오류 방지용
-        #self.cap = cv2.VideoCapture(
-        #    CAMERA_INDEX,
-        #    cv2.CAP_DSHOW
-        #)
-        
-        #라즈베리파이용
+        # 카메라 연결
+        # =========================        
         self.cap = cv2.VideoCapture(
             CAMERA_INDEX
         )
+
+        time.sleep(2)
+
+        if not self.cap.isOpened():
+
+            print("=" * 50)
+            print("[ERROR] 카메라 연결 실패")
+            print("[EXIT] 프로그램을 종료합니다")
+            print("=" * 50)
+
+            raise Exception("카메라 연결 실패")
 
         self.cap.set(
             cv2.CAP_PROP_FRAME_WIDTH,
@@ -90,6 +94,25 @@ class FaceCapture:
         return datetime.now().strftime(
             "%Y%m%d_%H%M%S"
         )
+    
+    def is_face_parts_visible(self, face, frame_width, frame_height, margin=5):
+
+        if not hasattr(face, "kps") or face.kps is None:
+            return False
+
+        kps = face.kps
+
+        if len(kps) < 5:
+            return False
+
+        for x, y in kps:
+            if x < margin or y < margin:
+                return False
+
+            if x > frame_width - margin or y > frame_height - margin:
+                return False
+
+        return True
 
     def capture_face(
         self,
@@ -104,8 +127,14 @@ class FaceCapture:
         if not ret:
 
             #print("카메라 프레임 읽기 실패")
+            print("=" * 50)
+            print("[ERROR] 카메라 프레임 읽기 실패")
+            print("[EXIT] 프로그램을 종료합니다")
+            print("=" * 50)
 
-            return None, None, None
+            raise Exception("카메라 프레임 읽기 실패")
+
+            #return None, None, None
 
         # =========================
         # [추가됨] 얼굴 탐지
@@ -130,6 +159,12 @@ class FaceCapture:
                 (f.bbox[3] - f.bbox[1])
             )
         )
+
+        height, width = frame.shape[:2]
+
+        if not self.is_face_parts_visible(face, width, height):
+            print("[RETRY] 눈, 코, 입이 모두 보이도록 정면을 봐주세요")
+            return None, None, None
 
         embedding = face.embedding
 

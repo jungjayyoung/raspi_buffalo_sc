@@ -144,6 +144,46 @@ def get_main_face_a_path(face_a_paths):
 
     return face_a_paths[0]
 
+def capture_verify_faces(face_capture):
+
+    face_b_paths = []
+    face_b_embeddings = []
+
+    while len(face_b_paths) < SESSION_FACE_CAPTURE_COUNT:
+
+        current_count = len(face_b_paths) + 1
+
+        image_path, embedding, _ = face_capture.capture_face(
+            label=f"face_B_{current_count}"
+        )
+
+        if image_path is None or embedding is None:
+
+            print(
+                f"face_B {current_count}/{SESSION_FACE_CAPTURE_COUNT} "
+                "촬영 실패 → 재시도"
+            )
+
+            continue
+
+        face_b_paths.append(image_path)
+        face_b_embeddings.append(embedding)
+
+        print(
+            f"face_B 촬영 성공 "
+            f"{len(face_b_paths)}/{SESSION_FACE_CAPTURE_COUNT}"
+        )
+
+        time.sleep(0.5)
+
+    return face_b_paths, face_b_embeddings
+
+def get_main_face_b_path(face_b_paths):
+
+    if len(face_b_paths) == 0:
+        return None
+
+    return face_b_paths[0]
 
 # =========================
 # [수정됨] 메인 함수
@@ -385,21 +425,37 @@ def main():
 
                 # =========================
                 # [7단계] 본인 검증
-                # 시동 직전 현재 운전자 face_B 촬영
-                # face_B ↔ session_embedding 비교
+                # 시동 직전 현재 운전자 face_B 3장 촬영
+                # face_B 평균 embedding ↔ session_embedding 비교
                 # =========================
                 print("👤 최종 운전자 확인 중...")
-                print("📸 face_B 촬영 시작")
+                print("📸 face_B 세션 촬영 시작")
 
-                face_b_path, face_b_embedding, _ = face_capture.capture_face(
-                    label="face_B"
+                face_b_paths, face_b_embeddings = capture_verify_faces(
+                    face_capture
                 )
 
-                if face_b_path is None:
+                if len(face_b_embeddings) == 0:
 
-                    print("face_B 촬영 실패")
+                    print("[ERROR] face_B 촬영 실패")
                     uart.send_message(MSG_ERROR)
                     continue
+
+                face_b_path = get_main_face_b_path(
+                    face_b_paths
+                )
+
+                face_b_embedding = session_driver.create_session_embedding(
+                    face_b_embeddings
+                )
+
+                if face_b_embedding is None:
+
+                    print("[ERROR] face_B 평균 embedding 생성 실패")
+                    uart.send_message(MSG_ERROR)
+                    continue
+
+                print("🧠 face_B 평균 embedding 생성 완료")
 
                 identity_result = session_driver.verify_current_driver(
                     current_embedding=face_b_embedding,
