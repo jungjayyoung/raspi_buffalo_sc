@@ -190,6 +190,10 @@ def main():
                 # 변경: 세션 운전자 embedding 생성을 위해 여러 장 촬영
                 # =========================
                 print("[5단계] face_A 세션 촬영")
+                print("=" * 50)
+                print("👤 얼굴 인증을 시작합니다")
+                print("📸 face_A 세션 촬영 시작")
+                print("=" * 50)
 
                 face_a_paths, face_a_embeddings = capture_session_faces(
                     face_capture
@@ -221,6 +225,7 @@ def main():
                     uart.send_message(MSG_ERROR)
                     continue
 
+                print("🧠 세션 운전자 embedding 생성 완료")
                 # =========================
                 # [수정됨] 등록 운전자 여부 확인
                 # 기존: 이력자 DB 1:N 매칭
@@ -235,14 +240,14 @@ def main():
                 driver_type = "registered" if is_registered else "unregistered"
                 driver_id = "registered_driver" if is_registered else "unknown"
 
-                print(f"운전자 유형: {driver_type}")
-                print(f"Registered Similarity: {registered_result['similarity']:.4f}")
+                print(f"👤 운전자 유형: {driver_type}")
+                print(f"📊 Registered Similarity: {registered_result['similarity']:.4f}")
 
 
                 # =========================
                 # [추가됨] 입-MQ3 위치 확인
                 # =========================
-                print("[5단계] 입-MQ3 위치 확인")
+                print("📍 입-MQ3 위치 확인 시작")
 
                 # =========================
                 # [수정됨] face_A 촬영에 사용한 카메라 해제
@@ -264,6 +269,8 @@ def main():
                     uart.send_message(MSG_ERROR)
 
                     return
+                
+                print("✅ 입-MQ3 위치 확인 완료")
 
                 # =========================
                 # [추가됨] face_B 촬영을 위해 FaceCapture 다시 생성
@@ -272,7 +279,10 @@ def main():
                 # =========================
                 # [추가됨] MQ3 측정 요청
                 # =========================
+
+                print("🌬️ 음주 측정 시작")
                 uart.send_message(MSG_REQ_MQ3)
+                print("📡 MQ3 측정 요청 전송")
 
                 print("[5단계] MQ3 값 수집")
                 mq3_values = collect_mq3_values(uart)
@@ -290,6 +300,7 @@ def main():
                 if not alcohol_result["is_blown"]:
 
                     print("실제 호흡 감지 실패")
+                    print(f"🔄 다시 측정해주세요 ({retry_count + 1}/{MAX_RETRY})")
 
                     retry_count += 1
 
@@ -317,7 +328,11 @@ def main():
                 # =========================
                 if alcohol_result["is_drunk"]:
 
-                    print("[6단계] 음주 감지")
+                    print("=" * 50)
+                    print("🚫 음주 감지")
+                    print(f"📈 MQ3 최대값: {mq3_max}")
+                    print(f"📈 MQ3 변화량(delta): {mq3_delta}")
+                    print("=" * 50)
 
                     retry_count += 1
 
@@ -373,7 +388,8 @@ def main():
                 # 시동 직전 현재 운전자 face_B 촬영
                 # face_B ↔ session_embedding 비교
                 # =========================
-                print("[7단계] 본인 검증 face_B 촬영")
+                print("👤 최종 운전자 확인 중...")
+                print("📸 face_B 촬영 시작")
 
                 face_b_path, face_b_embedding, _ = face_capture.capture_face(
                     label="face_B"
@@ -416,12 +432,23 @@ def main():
 
                     uart.send_message(MSG_IDENTITY_FAIL)
 
+                    print("=" * 50)
+                    print("⚠️ 측정자와 현재 운전자가 다릅니다")
+                    print("🚫 시동 차단")
+                    print("🔄 처음부터 다시 측정합니다")
+                    print("=" * 50)
+
+                    time.sleep(3)
+
                     continue
 
                 # =========================
                 # [9단계] 최종 PASS
                 # =========================
-                print("[9단계] 최종 PASS")
+                print("=" * 50)
+                print("✅ 최종 PASS")
+                print("🚗 시동 허용")
+                print("=" * 50)
 
                 uart.send_message(MSG_PASS)
 
