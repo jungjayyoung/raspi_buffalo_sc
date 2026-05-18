@@ -145,6 +145,7 @@ MSG_MEASURE_END = "MEASURE_END"
 # MQ3 센서값 prefix
 # 예: MQ3:1234
 MSG_MQ3_PREFIX = "MQ3:"
+MSG_HUM_PREFIX = "HUM:"
 
 # Raspberry Pi → STM32
 
