@@ -120,21 +120,37 @@ class FaceCapture:
     ):
 
         # =========================
-        # [추가됨] 프레임 읽기
+        # 얼굴 인증 간격 제한
         # =========================
-        ret, frame = self.cap.read()
+        if not hasattr(self, "last_capture_time"):
+            self.last_capture_time = 0
 
-        if not ret:
+        CAPTURE_INTERVAL = 1.0
 
-            #print("카메라 프레임 읽기 실패")
-            print("=" * 50)
-            print("[ERROR] 카메라 프레임 읽기 실패")
-            print("[EXIT] 프로그램을 종료합니다")
-            print("=" * 50)
+        while True:
 
-            raise Exception("카메라 프레임 읽기 실패")
+            ret, frame = self.cap.read()
 
-            #return None, None, None
+            if not ret:
+
+                print("=" * 50)
+                print("[ERROR] 카메라 프레임 읽기 실패")
+                print("[EXIT] 프로그램을 종료합니다")
+                print("=" * 50)
+
+                raise Exception("카메라 프레임 읽기 실패")
+
+            cv2.imshow("Driver Camera", frame)
+            cv2.waitKey(1)
+
+            now = time.time()
+
+            if now - self.last_capture_time < CAPTURE_INTERVAL:
+                continue
+
+            self.last_capture_time = now
+
+            break
 
         # =========================
         # [추가됨] 얼굴 탐지

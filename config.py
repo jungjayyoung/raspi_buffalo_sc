@@ -3,7 +3,7 @@
 # =========================
 # UART 설정
 # =========================
-UART_PORT = "/dev/serial0"
+UART_PORT = "/dev/ttyAMA0"
 UART_BAUDRATE = 115200
 UART_TIMEOUT = 1
 
@@ -111,7 +111,7 @@ SESSION_EMBEDDING_PATH = "logs/temp/session_embedding.npy"
 # =========================
 # [추가됨] 로컬 테스트 모드
 # =========================
-USE_UART = False
+USE_UART = True
 
 
 # =========================

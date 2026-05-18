@@ -50,7 +50,7 @@ POSITION_STABLE_TIME = 3.0
 
 class MouthPositionChecker:
 
-    def __init__(self):
+    def __init__(self, cap=None):
 
         # =========================
         # [추가됨] InsightFace 모델 로드
@@ -74,15 +74,17 @@ class MouthPositionChecker:
         #    cv2.CAP_DSHOW
         #)
 
-        #라즈베리파이용
-        self.cap = cv2.VideoCapture(
-            CAMERA_INDEX
-        )
+        self.external_cap = cap is not None
 
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-        self.cap.set(cv2.CAP_PROP_FPS, FPS)
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        if cap is not None:
+            self.cap = cap
+        else:
+            self.cap = cv2.VideoCapture(CAMERA_INDEX)
+
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+            self.cap.set(cv2.CAP_PROP_FPS, FPS)
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         print("MouthPositionChecker 준비 완료")
 
@@ -332,11 +334,8 @@ class MouthPositionChecker:
                 return False
 
     def release(self):
-
-        # =========================
-        # [추가됨] 카메라 종료
-        # =========================
-        if self.cap is not None:
+        # 외부에서 받은 카메라는 여기서 닫지 않음
+        if not self.external_cap and self.cap is not None:
             self.cap.release()
 
-        cv2.destroyAllWindows()
+        cv2.destroyWindow("Mouth Position Check")

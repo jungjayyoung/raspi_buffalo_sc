@@ -17,7 +17,6 @@ from config import (
     MSG_RETRY,
     MSG_ERROR,
     MAX_RETRY,
-    RETRY_DELAY,
     SESSION_FACE_CAPTURE_COUNT
 )
 
@@ -33,6 +32,41 @@ from config import USE_UART
 
 # [추가됨] 입-MQ3 위치 확인 모듈
 from mouth_position_checker import MouthPositionChecker
+
+
+
+
+
+
+
+def wait_seat_recovery_or_fail(uart, timeout=10):
+    """
+    SEAT_OFF 이후 10초 동안 SEAT_ON 복귀를 기다림.
+
+    return True  → 10초 안에 다시 앉음, 계속 진행
+    return False → 10초 초과, FAIL 처리
+    """
+
+    print("⚠️ SEAT_OFF 감지: 10초 안에 다시 앉아야 합니다")
+
+    start_time = time.time()
+
+    while time.time() - start_time < timeout:
+        message = uart.read_message()
+
+        if message == MSG_SEAT_ON:
+            print("✅ SEAT_ON 복귀: 시퀀스 계속 진행")
+            return True
+
+        remain = timeout - int(time.time() - start_time)
+
+        print(f"좌석 복귀 대기 중... {remain}초")
+        time.sleep(1)
+
+    print("🚫 10초 동안 SEAT_ON 없음 → FAIL")
+    uart.send_message(MSG_FAIL)
+
+    return False
 
 # =========================
 # [추가됨] MQ3 값 수집 함수
@@ -68,6 +102,14 @@ def collect_sensor_values(uart):
         if not message:
             continue
 
+        if message == MSG_SEAT_OFF:
+            recovered = wait_seat_recovery_or_fail(uart)
+
+            if not recovered:
+                return None, None
+
+            continue
+
         if message == MSG_MEASURE_BEGIN:
             print("[UART] 측정 시작")
             is_measuring = True
@@ -79,10 +121,11 @@ def collect_sensor_values(uart):
             print("[UART] 측정 종료")
             break
 
-        if not is_measuring:
-            continue
-
         if message.startswith(MSG_MQ3_PREFIX):
+            if not is_measuring:
+                print("[UART] 첫 MQ3 수신 → 자동 측정 시작")
+                is_measuring = True
+
             try:
                 value = int(message.split(":")[1])
                 mq3_values.append(value)
@@ -90,11 +133,19 @@ def collect_sensor_values(uart):
                 print("MQ3 값 변환 실패")
 
         elif message.startswith(MSG_HUM_PREFIX):
+            if not is_measuring:
+                print("[UART] 첫 HUM 수신 → 자동 측정 시작")
+                is_measuring = True
+
             try:
                 value = float(message.split(":")[1])
                 hum_values.append(value)
             except ValueError:
                 print("HUM 값 변환 실패")
+
+        
+    print("MQ3 수집 개수:", len(mq3_values))
+    print("HUM 수집 개수:", len(hum_values))
 
     return mq3_values, hum_values 
     
@@ -312,16 +363,10 @@ def main():
                 print("📍 입-MQ3 위치 확인 시작")
 
                 # =========================
-                # [수정됨] face_A 촬영에 사용한 카메라 해제
-                # MouthPositionChecker가 같은 카메라를 다시 열 수 있도록 함
-                # =========================
-                face_capture.release()
-
-                # =========================
                 # [수정됨] 입-MQ3 위치 확인 객체를 이 시점에 생성
                 # 기존처럼 main 시작 시 만들면 카메라 충돌 가능
                 # =========================
-                mouth_checker = MouthPositionChecker()
+                mouth_checker = MouthPositionChecker(cap=face_capture.cap)
                 mouth_ready = mouth_checker.check_ready(driver_type=driver_type)
                 mouth_checker.release()
 
@@ -334,67 +379,78 @@ def main():
                 
                 print("✅ 입-MQ3 위치 확인 완료")
 
+               
                 # =========================
-                # [추가됨] face_B 촬영을 위해 FaceCapture 다시 생성
-                # =========================
-                face_capture = FaceCapture()
-                # =========================
-                # [추가됨] MQ3 측정 요청
+                # MQ3 측정 요청
                 # =========================
 
                 print("🌬️ 음주 측정 시작")
 
                 print("[4단계][측정 대기 단계] BLOW_START 대기")
 
+                seat_fail = False
+
                 if USE_UART:
-                    uart.wait_for_message(MSG_BLOW_START)
+                    while True:
+                        message = uart.read_message()
+
+                        if not message:
+                            continue
+
+                        print(f"[BLOW 대기 수신] {message}")
+
+                        if message == MSG_SEAT_OFF:
+                            recovered = wait_seat_recovery_or_fail(uart)
+
+                            if not recovered:
+                                seat_fail = True
+                                break
+
+                            continue
+
+                        if message == MSG_BLOW_START:
+                            retry_count += 1
+                            print(f"🌬️ BLOW 버튼 입력 감지: {retry_count}회차 측정 시작")
+                            break
                 else:
-                    print("[LOCAL TEST] BLOW_START 자동 통과")
+                    retry_count += 1
+                    print(f"[LOCAL TEST] BLOW_START 자동 통과: {retry_count}회차 측정 시작")
+
+                if seat_fail:
+                    print("SEAT_OFF로 인해 FAIL 처리됨 → IDLE 상태로 복귀")
+                    break
 
 
                 print("[5단계] MQ3 값, DHT 값  수집")
-                mq3_values, hum_values = collect_sensor_values(uart)
 
-                alcohol_result = alcohol_judge.judge(
-                    mq3_values,
-                    hum_values
-                )
 
-                mq3_max = alcohol_result["mq3_peak"]
-                mq3_delta = alcohol_result["mq3_delta"]
-                hum_delta = alcohol_result["hum_delta"]
+                seat_fail = False
 
-                # =========================
-                # [추가됨] 실제 호흡 실패 처리
-                # =========================
-                if not alcohol_result["is_blown"]:
+                while True:
+                    mq3_values, hum_values = collect_sensor_values(uart)
 
-                    print("실제 호흡 감지 실패")
-                    print(f"🔄 다시 측정해주세요 ({retry_count + 1}/{MAX_RETRY})")
+                    if mq3_values is None or hum_values is None:
+                        print("SEAT_OFF로 인해 FAIL 처리됨 → IDLE 상태로 복귀")
+                        seat_fail = True
+                        break
 
-                    retry_count += 1
+                    alcohol_result = alcohol_judge.judge(
+                        mq3_values,
+                        hum_values
+                    )
 
-                    logger.write_log(
-                    driver_type=driver_type,
-                    driver_id=driver_id,
-                    mq3_max=mq3_max,
-                    mq3_delta=mq3_delta,
-                    hum_delta=hum_delta,
-                    alcohol_result="invalid",
-                    identity_result="skip",
-                    final_result=f"RETRY_{retry_count}",
-                    reason=alcohol_result["reason"]
-                )
+                    mq3_max = alcohol_result["mq3_peak"]
+                    mq3_delta = alcohol_result["mq3_delta"]
+                    hum_delta = alcohol_result["hum_delta"]
 
-                    uart.send_message(MSG_RETRY)
+                    if alcohol_result["is_blown"]:
+                        break
 
-                    if retry_count > MAX_RETRY:
-                        uart.send_message(MSG_FAIL)
-                        print("재시도 초과: FAIL_DRUNK")
+                    print("호흡 감지 대기 중... 입을 측정기 가까이에 유지해주세요")
 
-                    time.sleep(RETRY_DELAY)
-                    continue
-
+                if seat_fail:
+                    break
+                
                 # =========================
                 # [6단계] 음주 감지 처리
                 # =========================
@@ -405,8 +461,6 @@ def main():
                     print(f"📈 MQ3 최대값: {mq3_max}")
                     print(f"📈 MQ3 변화량(delta): {mq3_delta}")
                     print("=" * 50)
-
-                    retry_count += 1
 
                     # =========================
                     # [수정됨] registered / unregistered 기준 저장
@@ -435,12 +489,11 @@ def main():
                         reason=alcohol_result["reason"]
                     )
 
-                    if retry_count <= MAX_RETRY:
+                    if retry_count < MAX_RETRY:
 
                         uart.send_message(MSG_RETRY)
-                        print(f"{retry_count}회차 음주 감지: 30초 후 재측정")
+                        print(f"{retry_count}회차 음주 감지: BLOW 버튼 재입력 대기")
 
-                        time.sleep(RETRY_DELAY)
                         continue
 
                     else:
