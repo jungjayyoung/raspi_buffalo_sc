@@ -4,17 +4,18 @@ import time
 import os
 
 from config import (
-    MSG_ACK_READY,
-    MSG_REQ_START,
-    MSG_DETECT_ON,
-    MSG_ACK_START,
-    MSG_REQ_MQ3,
+    MSG_SYSTEM_START,
+    MSG_SEAT_ON,
+    MSG_SEAT_OFF,
+    MSG_BLOW_START,
+    MSG_MEASURE_BEGIN,
+    MSG_MEASURE_END,
+    MSG_MQ3_PREFIX,
+    MSG_HUM_PREFIX,
     MSG_PASS,
-    MSG_FAIL_DRUNK,
+    MSG_FAIL,
     MSG_RETRY,
-    MSG_IDENTITY_FAIL,
     MSG_ERROR,
-    MQ3_SAMPLE_TIME,
     MAX_RETRY,
     RETRY_DELAY,
     SESSION_FACE_CAPTURE_COUNT
@@ -67,28 +68,28 @@ def collect_sensor_values(uart):
         if not message:
             continue
 
-        if message == "MEASURE_BEGIN":
+        if message == MSG_MEASURE_BEGIN:
             print("[UART] 측정 시작")
             is_measuring = True
             mq3_values.clear()
             hum_values.clear()
             continue
 
-        if message == "MEASURE_END":
+        if message == MSG_MEASURE_END:
             print("[UART] 측정 종료")
             break
 
         if not is_measuring:
             continue
 
-        if message.startswith("MQ3:"):
+        if message.startswith(MSG_MQ3_PREFIX):
             try:
                 value = int(message.split(":")[1])
                 mq3_values.append(value)
             except ValueError:
                 print("MQ3 값 변환 실패")
 
-        elif message.startswith("HUM:"):
+        elif message.startswith(MSG_HUM_PREFIX):
             try:
                 value = float(message.split(":")[1])
                 hum_values.append(value)
@@ -228,33 +229,29 @@ def main():
     retry_count = 0
 
     try:
-        print("[2단계] ACK:READY 대기")
-        #uart.wait_for_message(MSG_ACK_READY)
-        # 시동 요청이 들어왔을 때 STM32에서 ACK:READY를 보내도록 함
-        print("[LOCAL TEST] ACK:READY 자동 통과")
+        print("[1단계] SYSTEM_START 대기")
+        if USE_UART:
+            uart.wait_for_message(MSG_SYSTEM_START)
+        else:
+            print("[LOCAL TEST] SYSTEM_START 자동 통과")
 
         while True:
 
-            print("[3단계] REQ:START 대기")
-            #uart.wait_for_message(MSG_REQ_START)
-             # 사용자가 측정기 start 버튼을 눌렀을 때 
-            print("[LOCAL TEST] REQ:START 자동 통과")
+            print("[2단계] SEAT_ON 대기")
+            if USE_UART:
+                uart.wait_for_message(MSG_SEAT_ON)
+            else:
+                print("[LOCAL TEST] SEAT_ON 자동 통과")
 
-            uart.send_message(MSG_ACK_START)
 
             while True:
-
-                print("[4단계] 운전자 감지 대기")
-                #uart.wait_for_message(MSG_DETECT_ON)
-                # 운전자가 시트에 앉았을때
-                print("[LOCAL TEST] DETECT:ON 자동 통과")
 
                 # =========================
                 # [수정됨] face_A 1~3장 촬영
                 # 기존: face_A 1장 촬영
                 # 변경: 세션 운전자 embedding 생성을 위해 여러 장 촬영
                 # =========================
-                print("[5단계] face_A 세션 촬영")
+                print("[3단계] face_A 세션 촬영")
                 print("=" * 50)
                 print("👤 얼굴 인증을 시작합니다")
                 print("📸 face_A 세션 촬영 시작")
@@ -346,8 +343,14 @@ def main():
                 # =========================
 
                 print("🌬️ 음주 측정 시작")
-                uart.send_message(MSG_REQ_MQ3)
-                print("📡 MQ3 측정 요청 전송")
+
+                print("[4단계][측정 대기 단계] BLOW_START 대기")
+
+                if USE_UART:
+                    uart.wait_for_message(MSG_BLOW_START)
+                else:
+                    print("[LOCAL TEST] BLOW_START 자동 통과")
+
 
                 print("[5단계] MQ3 값, DHT 값  수집")
                 mq3_values, hum_values = collect_sensor_values(uart)
@@ -372,19 +375,21 @@ def main():
                     retry_count += 1
 
                     logger.write_log(
-                        driver_type=driver_type,
-                        driver_id=driver_id,
-                        mq3_max=mq3_max,
-                        mq3_delta=mq3_delta,
-                        alcohol_result="invalid",
-                        identity_result="skip",
-                        final_result=f"RETRY_{retry_count}"
-                    )
+                    driver_type=driver_type,
+                    driver_id=driver_id,
+                    mq3_max=mq3_max,
+                    mq3_delta=mq3_delta,
+                    hum_delta=hum_delta,
+                    alcohol_result="invalid",
+                    identity_result="skip",
+                    final_result=f"RETRY_{retry_count}",
+                    reason=alcohol_result["reason"]
+                )
 
                     uart.send_message(MSG_RETRY)
 
                     if retry_count > MAX_RETRY:
-                        uart.send_message(MSG_FAIL_DRUNK)
+                        uart.send_message(MSG_FAIL)
                         print("재시도 초과: FAIL_DRUNK")
 
                     time.sleep(RETRY_DELAY)
@@ -426,7 +431,8 @@ def main():
 
                         alcohol_result="invalid",
                         identity_result="skip",
-                        final_result=f"RETRY_{retry_count}"
+                        final_result=f"RETRY_{retry_count}",
+                        reason=alcohol_result["reason"]
                     )
 
                     if retry_count <= MAX_RETRY:
@@ -439,13 +445,14 @@ def main():
 
                     else:
 
-                        uart.send_message(MSG_FAIL_DRUNK)
+                        uart.send_message(MSG_FAIL)
 
                         logger.write_log(
                             driver_type=driver_type,
                             driver_id=driver_id,
                             mq3_max=mq3_max,
                             mq3_delta=mq3_delta,
+                            hum_delta=hum_delta,
                             alcohol_result="drunk",
                             identity_result="skip",
                             final_result="FAIL_DRUNK",
@@ -517,12 +524,11 @@ def main():
                         hum_delta=hum_delta,
 
                         alcohol_result="normal",
-                        identity_result="pass",
-
-                        final_result="PASS",
+                        identity_result="fail",
+                        final_result="IDENTITY_FAIL",
                         reason=alcohol_result["reason"]
                     )
-                    uart.send_message(MSG_IDENTITY_FAIL)
+                    uart.send_message(MSG_FAIL)
 
                     print("=" * 50)
                     print("⚠️ 측정자와 현재 운전자가 다릅니다")
