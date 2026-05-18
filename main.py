@@ -208,12 +208,14 @@ def main():
     try:
         print("[2단계] ACK:READY 대기")
         #uart.wait_for_message(MSG_ACK_READY)
+        # 시동 요청이 들어왔을 때 STM32에서 ACK:READY를 보내도록 함
         print("[LOCAL TEST] ACK:READY 자동 통과")
 
         while True:
 
             print("[3단계] REQ:START 대기")
             #uart.wait_for_message(MSG_REQ_START)
+             # 사용자가 측정기 start 버튼을 눌렀을 때 
             print("[LOCAL TEST] REQ:START 자동 통과")
 
             uart.send_message(MSG_ACK_START)
@@ -222,6 +224,7 @@ def main():
 
                 print("[4단계] 운전자 감지 대기")
                 #uart.wait_for_message(MSG_DETECT_ON)
+                # 운전자가 시트에 앉았을때
                 print("[LOCAL TEST] DETECT:ON 자동 통과")
 
                 # =========================
@@ -300,7 +303,7 @@ def main():
                 # 기존처럼 main 시작 시 만들면 카메라 충돌 가능
                 # =========================
                 mouth_checker = MouthPositionChecker()
-                mouth_ready = mouth_checker.check_ready()
+                mouth_ready = mouth_checker.check_ready(driver_type=driver_type)
                 mouth_checker.release()
 
                 if not mouth_ready:

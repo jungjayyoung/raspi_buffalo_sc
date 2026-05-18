@@ -142,9 +142,19 @@ class FaceCapture:
         faces = self.app.get(frame)
 
         if len(faces) == 0:
+            cv2.putText(
+                frame,
+                "NO FACE",
+                (30, 50),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.2,
+                (0, 0, 255),
+                3
+            )
 
-            # print("얼굴 검출 실패")
- 
+            cv2.imshow("Driver Camera", frame)
+            cv2.waitKey(1)
+
             return None, None, None
         
         print("얼굴 검출 성공")
@@ -165,13 +175,36 @@ class FaceCapture:
         if not self.is_face_parts_visible(face, width, height):
             print("[RETRY] 눈, 코, 입이 모두 보이도록 정면을 봐주세요")
             return None, None, None
-
-        embedding = face.embedding
+        
 
         # =========================
         # [수정됨] 얼굴 박스 좌표 추출
         # =========================
         x1, y1, x2, y2 = face.bbox.astype(int)
+
+        cv2.rectangle(
+            frame,
+            (x1, y1),
+            (x2, y2),
+            (0, 255, 0),
+            2
+        )
+
+        cv2.putText(
+            frame,
+            "AUTHENTICATING...",
+            (30, 50),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (0, 255, 0),
+            2
+        )
+
+        cv2.imshow("Driver Camera", frame)
+        cv2.waitKey(1)
+
+
+        embedding = face.embedding
 
         # =========================
         # [추가됨] 얼굴 박스 좌표 화면 범위 보정

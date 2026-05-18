@@ -86,7 +86,7 @@ class MouthPositionChecker:
 
         print("MouthPositionChecker 준비 완료")
 
-    def check_ready(self):
+    def check_ready(self, driver_type="unknown"):
 
         # =========================
         # [추가됨] 입-MQ3 위치 확인 메인 루프
@@ -300,7 +300,19 @@ class MouthPositionChecker:
                 f"State: {current_state}",
                 (10, 25),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
+                0.6,
+                (255, 255, 255),
+                2
+            )
+            # =========================
+            # [추가됨] 운전자 유형 표시
+            # =========================
+            cv2.putText(
+                frame,
+                f"Driver Type: {driver_type}",
+                (10, 55),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
                 (255, 255, 255),
                 2
             )
