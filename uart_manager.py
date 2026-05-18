@@ -2,7 +2,12 @@
 
 import serial
 import time
-from config import USE_UART
+from config import (
+    USE_UART,
+    UART_PORT,
+    UART_BAUDRATE,
+    UART_TIMEOUT
+)
 
 
 class UARTManager:

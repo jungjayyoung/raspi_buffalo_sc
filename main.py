@@ -36,44 +36,66 @@ from mouth_position_checker import MouthPositionChecker
 # =========================
 # [추가됨] MQ3 값 수집 함수
 # =========================
-def collect_mq3_values(uart):
-
-    # =========================
-    # [추가됨] 로컬 테스트용 MQ3 더미값
-    # STM32 없이 테스트할 때 사용
-    # =========================
+def collect_sensor_values(uart):
     if not USE_UART:
+        print("[LOCAL TEST] MQ3/HUM 더미값 사용")
 
-        print("[LOCAL TEST] MQ3 더미값 사용")
+        # 정상 호흡 + 정상 판정 예시
+        mq3_values = [1100] * 10 + [1120, 1140, 1160, 1180] + [1180] * 36
+        hum_values = [52.0, 52.1, 52.0, 55.0, 57.0, 58.0]
 
-        # 정상 테스트용
-        return [120, 150, 190, 230]
+        return mq3_values, hum_values
 
-        # 음주 테스트용으로 바꾸고 싶으면 아래 사용
-        # return [120, 260, 430, 520]
+        # 음주 테스트 예시
+        # mq3_values = [1100] * 10 + [1300, 1450, 1650, 1700] + [1700] * 36
+        # hum_values = [52.0, 52.1, 52.0, 55.0, 57.0, 58.0]
+        # return mq3_values, hum_values
 
+        # 제대로 안 분 경우 RETRY 예시
+        # mq3_values = [1100] * 10 + [1110] * 40
+        # hum_values = [52.0, 52.0, 52.1, 52.1]
+        # return mq3_values, hum_values
 
     mq3_values = []
-    start_time = time.time()
+    hum_values = []
 
-    while time.time() - start_time < MQ3_SAMPLE_TIME:
+    is_measuring = False
 
+    while True:
         message = uart.read_message()
 
         if not message:
             continue
 
-        if message.startswith("MQ3:"):
+        if message == "MEASURE_BEGIN":
+            print("[UART] 측정 시작")
+            is_measuring = True
+            mq3_values.clear()
+            hum_values.clear()
+            continue
 
+        if message == "MEASURE_END":
+            print("[UART] 측정 종료")
+            break
+
+        if not is_measuring:
+            continue
+
+        if message.startswith("MQ3:"):
             try:
                 value = int(message.split(":")[1])
                 mq3_values.append(value)
-
             except ValueError:
                 print("MQ3 값 변환 실패")
 
-    # stm32 용
-    return mq3_values
+        elif message.startswith("HUM:"):
+            try:
+                value = float(message.split(":")[1])
+                hum_values.append(value)
+            except ValueError:
+                print("HUM 값 변환 실패")
+
+    return mq3_values, hum_values 
     
 
 
@@ -327,15 +349,17 @@ def main():
                 uart.send_message(MSG_REQ_MQ3)
                 print("📡 MQ3 측정 요청 전송")
 
-                print("[5단계] MQ3 값 수집")
-                mq3_values = collect_mq3_values(uart)
+                print("[5단계] MQ3 값, DHT 값  수집")
+                mq3_values, hum_values = collect_sensor_values(uart)
 
                 alcohol_result = alcohol_judge.judge(
-                    mq3_values
+                    mq3_values,
+                    hum_values
                 )
 
-                mq3_max = alcohol_result["max_value"]
-                mq3_delta = alcohol_result["delta"]
+                mq3_max = alcohol_result["mq3_peak"]
+                mq3_delta = alcohol_result["mq3_delta"]
+                hum_delta = alcohol_result["hum_delta"]
 
                 # =========================
                 # [추가됨] 실제 호흡 실패 처리
@@ -394,9 +418,13 @@ def main():
                     logger.write_log(
                         driver_type=driver_type,
                         driver_id=driver_id,
+
                         mq3_max=mq3_max,
                         mq3_delta=mq3_delta,
-                        alcohol_result="drunk",
+
+                        hum_delta=hum_delta,
+
+                        alcohol_result="invalid",
                         identity_result="skip",
                         final_result=f"RETRY_{retry_count}"
                     )
@@ -420,7 +448,8 @@ def main():
                             mq3_delta=mq3_delta,
                             alcohol_result="drunk",
                             identity_result="skip",
-                            final_result="FAIL_DRUNK"
+                            final_result="FAIL_DRUNK",
+                            reason=alcohol_result["reason"]
                         )
 
                         print("최종 음주 판정: FAIL_DRUNK")
@@ -482,13 +511,17 @@ def main():
                     logger.write_log(
                         driver_type=driver_type,
                         driver_id=driver_id,
+
                         mq3_max=mq3_max,
                         mq3_delta=mq3_delta,
-                        alcohol_result="normal",
-                        identity_result="fail",
-                        final_result="IDENTITY_FAIL"
-                    )
+                        hum_delta=hum_delta,
 
+                        alcohol_result="normal",
+                        identity_result="pass",
+
+                        final_result="PASS",
+                        reason=alcohol_result["reason"]
+                    )
                     uart.send_message(MSG_IDENTITY_FAIL)
 
                     print("=" * 50)
@@ -533,11 +566,16 @@ def main():
                 logger.write_log(
                     driver_type=driver_type,
                     driver_id=driver_id,
+
                     mq3_max=mq3_max,
                     mq3_delta=mq3_delta,
+                    hum_delta=hum_delta,
+
                     alcohol_result="normal",
                     identity_result="pass",
-                    final_result="PASS"
+
+                    final_result="PASS",
+                    reason=alcohol_result["reason"]
                 )
 
                 print("시퀀스 완료")

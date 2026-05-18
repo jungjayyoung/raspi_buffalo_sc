@@ -24,9 +24,11 @@ class LoggerManager:
         driver_id,
         mq3_max,
         mq3_delta,
+        hum_delta,
         alcohol_result,
         identity_result,
-        final_result
+        final_result,
+        reason
     ):
 
         # =========================
@@ -45,8 +47,10 @@ class LoggerManager:
             f"driver_id={driver_id} | "
             f"mq3_max={mq3_max} | "
             f"mq3_delta={mq3_delta} | "
+            f"hum_delta={hum_delta} | "
             f"alcohol={alcohol_result} | "
             f"identity={identity_result} | "
+            f"reason={reason} | "
             f"result={final_result}\n"
         )
 
