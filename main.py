@@ -431,6 +431,7 @@ def main():
 
 
                     seat_fail = False
+                    need_retry = False
 
                     while True:
                         mq3_values, hum_values = collect_sensor_values(uart)
@@ -451,15 +452,20 @@ def main():
 
                         if alcohol_result["is_blown"]:
                             break
-
-                        uart.send_message(MSG_RETRY)
                         print("호흡 감지 부족 → STM32에 RETRY 전송")
                         print("BLOW 버튼 재입력 대기")
+                        uart.send_message(MSG_RETRY)
+
+
+                        need_retry = True
+
                         break
 
                     if seat_fail:
                         break
-                    
+                    if need_retry:
+                        continue
+
                     # =========================
                     # [6단계] 음주 감지 처리
                     # =========================
@@ -500,6 +506,7 @@ def main():
 
                         if retry_count < MAX_RETRY:
 
+                            print("RPi -> STM32: RETRY 전송")
                             uart.send_message(MSG_RETRY)
 
                             print(
