@@ -278,7 +278,7 @@ def main():
 
     face_capture.preview(duration=5)
 
-    retry_count = 0
+    
 
     try:
         print("[1단계] SYSTEM_START 대기")
@@ -297,6 +297,8 @@ def main():
 
 
             while True:
+
+                retry_count = 0
 
                 # =========================
                 # [수정됨] face_A 1~3장 촬영
