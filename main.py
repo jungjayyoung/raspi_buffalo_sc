@@ -450,7 +450,10 @@ def main():
                         if alcohol_result["is_blown"]:
                             break
 
-                        print("호흡 감지 대기 중... 입을 측정기 가까이에 유지해주세요")
+                        uart.send_message(MSG_RETRY)
+                        print("호흡 감지 부족 → STM32에 RETRY 전송")
+                        print("BLOW 버튼 재입력 대기")
+                        break
 
                     if seat_fail:
                         break
