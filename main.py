@@ -415,8 +415,8 @@ def main():
                                 continue
 
                             if message == MSG_BLOW_START:
-                                retry_count += 1
-                                print(f"🌬️ BLOW 버튼 입력 감지: {retry_count}회차 측정 시작")
+                                
+                                print(f"🌬️ BLOW 버튼 입력 감지")
                                 break
                     else:
                         retry_count += 1
@@ -451,6 +451,8 @@ def main():
                         hum_delta = alcohol_result["hum_delta"]
 
                         if alcohol_result["is_blown"]:
+                            retry_count += 1
+                            print(f"✅ 정상 호흡 감지: {retry_count}회차 측정 완료")
                             break
                         print("호흡 감지 부족 → STM32에 RETRY 전송")
                         print("BLOW 버튼 재입력 대기")
@@ -535,6 +537,15 @@ def main():
 
                             print("최종 음주 판정: FAIL_DRUNK")
                             break
+                    else:
+                        # 정상 호흡 + 음주 아님
+                        if retry_count < MAX_RETRY:
+                            print("정상 측정 완료 → 다음 측정을 위해 RETRY 전송")
+                            uart.send_message(MSG_RETRY)
+                            continue
+
+                        print("정상 측정 3회 완료 → 본인 검증 단계로 이동")
+                        break
                 
 
                 if seat_fail:
