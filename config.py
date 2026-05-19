@@ -71,6 +71,11 @@ HUM_BLOW_DELTA_THRESHOLD = 3.0    # 습도 호흡 감지 최소 변화량(%)
 MAX_RETRY = 3
 RETRY_DELAY = 30
 
+# =========================
+# 좌석 이탈 복귀 제한 시간
+# =========================
+SEAT_RECOVERY_TIMEOUT = 10
+
 
 # =========================
 # [수정됨] DB 경로
@@ -129,6 +134,7 @@ MSG_SEAT_ON = "SEAT_ON"
 
 # 운전석 감지 OFF
 MSG_SEAT_OFF = "SEAT_OFF"
+
 
 # BLOW 버튼 눌림
 # STM32가 MQ3 스트리밍 시작 전에 Pi에 알림

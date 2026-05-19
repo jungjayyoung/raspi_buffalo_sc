@@ -17,7 +17,8 @@ from config import (
     MSG_RETRY,
     MSG_ERROR,
     MAX_RETRY,
-    SESSION_FACE_CAPTURE_COUNT
+    SESSION_FACE_CAPTURE_COUNT,
+    SEAT_RECOVERY_TIMEOUT
 )
 
 from uart_manager import UARTManager
@@ -39,7 +40,7 @@ from mouth_position_checker import MouthPositionChecker
 
 
 
-def wait_seat_recovery_or_fail(uart, timeout=10):
+def wait_seat_recovery_or_fail(uart, timeout=SEAT_RECOVERY_TIMEOUT):
     """
     SEAT_OFF 이후 10초 동안 SEAT_ON 복귀를 기다림.
 
@@ -47,7 +48,7 @@ def wait_seat_recovery_or_fail(uart, timeout=10):
     return False → 10초 초과, FAIL 처리
     """
 
-    print("⚠️ SEAT_OFF 감지: 10초 안에 다시 앉아야 합니다")
+    print("⚠️ SEAT_OFF 감지: {}초 안에 다시 앉아야 합니다".format(timeout))
 
     start_time = time.time()
 
@@ -63,7 +64,7 @@ def wait_seat_recovery_or_fail(uart, timeout=10):
         print(f"좌석 복귀 대기 중... {remain}초")
         time.sleep(1)
 
-    print("🚫 10초 동안 SEAT_ON 없음 → FAIL")
+    print("🚫 {}초 동안 SEAT_ON 없음 → FAIL".format(timeout))
     uart.send_message(MSG_FAIL)
 
     return False
@@ -383,138 +384,151 @@ def main():
                 # =========================
                 # MQ3 측정 요청
                 # =========================
+                alcohol_failed = False
 
-                print("🌬️ 음주 측정 시작")
+                while retry_count < MAX_RETRY:
 
-                print("[4단계][측정 대기 단계] BLOW_START 대기")
+                    print("🌬️ 음주 측정 시작")
 
-                seat_fail = False
+                    print("[4단계][측정 대기 단계] BLOW_START 대기")
 
-                if USE_UART:
-                    while True:
-                        message = uart.read_message()
+                    seat_fail = False
 
-                        if not message:
-                            continue
+                    if USE_UART:
+                        while True:
+                            message = uart.read_message()
 
-                        print(f"[BLOW 대기 수신] {message}")
+                            if not message:
+                                continue
 
-                        if message == MSG_SEAT_OFF:
-                            recovered = wait_seat_recovery_or_fail(uart)
+                            print(f"[BLOW 대기 수신] {message}")
 
-                            if not recovered:
-                                seat_fail = True
+                            if message == MSG_SEAT_OFF:
+                                recovered = wait_seat_recovery_or_fail(uart)
+
+                                if not recovered:
+                                    seat_fail = True
+                                    break
+
+                                continue
+
+                            if message == MSG_BLOW_START:
+                                retry_count += 1
+                                print(f"🌬️ BLOW 버튼 입력 감지: {retry_count}회차 측정 시작")
                                 break
+                    else:
+                        retry_count += 1
+                        print(f"[LOCAL TEST] BLOW_START 자동 통과: {retry_count}회차 측정 시작")
 
-                            continue
-
-                        if message == MSG_BLOW_START:
-                            retry_count += 1
-                            print(f"🌬️ BLOW 버튼 입력 감지: {retry_count}회차 측정 시작")
-                            break
-                else:
-                    retry_count += 1
-                    print(f"[LOCAL TEST] BLOW_START 자동 통과: {retry_count}회차 측정 시작")
-
-                if seat_fail:
-                    print("SEAT_OFF로 인해 FAIL 처리됨 → IDLE 상태로 복귀")
-                    break
-
-
-                print("[5단계] MQ3 값, DHT 값  수집")
-
-
-                seat_fail = False
-
-                while True:
-                    mq3_values, hum_values = collect_sensor_values(uart)
-
-                    if mq3_values is None or hum_values is None:
+                    if seat_fail:
                         print("SEAT_OFF로 인해 FAIL 처리됨 → IDLE 상태로 복귀")
-                        seat_fail = True
                         break
 
-                    alcohol_result = alcohol_judge.judge(
-                        mq3_values,
-                        hum_values
-                    )
 
-                    mq3_max = alcohol_result["mq3_peak"]
-                    mq3_delta = alcohol_result["mq3_delta"]
-                    hum_delta = alcohol_result["hum_delta"]
+                    print("[5단계] MQ3 값, DHT 값  수집")
 
-                    if alcohol_result["is_blown"]:
+
+                    seat_fail = False
+
+                    while True:
+                        mq3_values, hum_values = collect_sensor_values(uart)
+
+                        if mq3_values is None or hum_values is None:
+                            print("SEAT_OFF로 인해 FAIL 처리됨 → IDLE 상태로 복귀")
+                            seat_fail = True
+                            break
+
+                        alcohol_result = alcohol_judge.judge(
+                            mq3_values,
+                            hum_values
+                        )
+
+                        mq3_max = alcohol_result["mq3_peak"]
+                        mq3_delta = alcohol_result["mq3_delta"]
+                        hum_delta = alcohol_result["hum_delta"]
+
+                        if alcohol_result["is_blown"]:
+                            break
+
+                        print("호흡 감지 대기 중... 입을 측정기 가까이에 유지해주세요")
+
+                    if seat_fail:
                         break
-
-                    print("호흡 감지 대기 중... 입을 측정기 가까이에 유지해주세요")
-
-                if seat_fail:
-                    break
-                
-                # =========================
-                # [6단계] 음주 감지 처리
-                # =========================
-                if alcohol_result["is_drunk"]:
-
-                    print("=" * 50)
-                    print("🚫 음주 감지")
-                    print(f"📈 MQ3 최대값: {mq3_max}")
-                    print(f"📈 MQ3 변화량(delta): {mq3_delta}")
-                    print("=" * 50)
-
+                    
                     # =========================
-                    # [수정됨] registered / unregistered 기준 저장
+                    # [6단계] 음주 감지 처리
                     # =========================
-                    if is_registered:
-                        file_manager.save_registered_drunk(
-                            face_a_path
-                        )
-                    else:
-                        file_manager.save_unregistered_drunk(
-                            face_a_path
-                        )
+                    if alcohol_result["is_drunk"]:
 
-                    logger.write_log(
-                        driver_type=driver_type,
-                        driver_id=driver_id,
+                        print("=" * 50)
+                        print("🚫 음주 감지")
+                        print(f"📈 MQ3 최대값: {mq3_max}")
+                        print(f"📈 MQ3 변화량(delta): {mq3_delta}")
+                        print("=" * 50)
 
-                        mq3_max=mq3_max,
-                        mq3_delta=mq3_delta,
-
-                        hum_delta=hum_delta,
-
-                        alcohol_result="invalid",
-                        identity_result="skip",
-                        final_result=f"RETRY_{retry_count}",
-                        reason=alcohol_result["reason"]
-                    )
-
-                    if retry_count < MAX_RETRY:
-
-                        uart.send_message(MSG_RETRY)
-                        print(f"{retry_count}회차 음주 감지: BLOW 버튼 재입력 대기")
-
-                        continue
-
-                    else:
-
-                        uart.send_message(MSG_FAIL)
+                        # =========================
+                        # [수정됨] registered / unregistered 기준 저장
+                        # =========================
+                        if is_registered:
+                            file_manager.save_registered_drunk(
+                                face_a_path
+                            )
+                        else:
+                            file_manager.save_unregistered_drunk(
+                                face_a_path
+                            )
 
                         logger.write_log(
                             driver_type=driver_type,
                             driver_id=driver_id,
+
                             mq3_max=mq3_max,
                             mq3_delta=mq3_delta,
+
                             hum_delta=hum_delta,
-                            alcohol_result="drunk",
+
+                            alcohol_result="invalid",
                             identity_result="skip",
-                            final_result="FAIL_DRUNK",
+                            final_result=f"RETRY_{retry_count}",
                             reason=alcohol_result["reason"]
                         )
 
-                        print("최종 음주 판정: FAIL_DRUNK")
-                        continue
+                        if retry_count < MAX_RETRY:
 
+                            uart.send_message(MSG_RETRY)
+
+                            print(
+                                f"{retry_count}회차 음주 감지 "
+                                f"→ BLOW 버튼 재입력 대기"
+                            )
+
+                            # 바깥 retry 루프로
+                            continue
+
+                        else:
+
+                            uart.send_message(MSG_FAIL)
+                            alcohol_failed = True
+                            logger.write_log(
+                                driver_type=driver_type,
+                                driver_id=driver_id,
+                                mq3_max=mq3_max,
+                                mq3_delta=mq3_delta,
+                                hum_delta=hum_delta,
+                                alcohol_result="drunk",
+                                identity_result="skip",
+                                final_result="FAIL_DRUNK",
+                                reason=alcohol_result["reason"]
+                            )
+
+                            print("최종 음주 판정: FAIL_DRUNK")
+                            break
+                
+
+                if seat_fail:
+                    continue
+                if alcohol_failed:
+                    continue
                 # =========================
                 # [7단계] 본인 검증
                 # 시동 직전 현재 운전자 face_B 3장 촬영
